@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cubo científico: Degradación de los ecosistemas</title>
+<style>
+  :root {
+    --bg: #070b14;
+    --line: #1f3a5f;
+    --accent: #3ee0ff;
+    --accent2: #7cffb2;
+    --text: #d8e6ff;
+    --muted: #8aa0c2;
+    --size: min(90vw, calc((100vh - 205px) / 1.2), 700px);
+  }
+  @supports (height: 100dvh) {
+    :root { --size: min(90vw, calc((100dvh - 205px) / 1.2), 700px); }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(ellipse at 50% 30%, #10203c 0%, var(--bg) 70%);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    overflow: hidden;
+    user-select: none; -webkit-user-select: none;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(62,224,255,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(62,224,255,.05) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  header { text-align: center; padding: 14px 16px 0; z-index: 2; }
+  header h1 { font-size: clamp(15px, 3.4vw, 21px); letter-spacing: .18em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+  header p { font-size: 12px; color: var(--muted); margin-top: 4px; letter-spacing: .06em; min-height: 1.2em; }
+
+  .stage {
+    flex: 1; width: 100%; min-height: 0;
+    display: flex; align-items: center; justify-content: center;
+    perspective: calc(var(--size) * 3.2);
+    touch-action: none; cursor: grab;
+  }
+  .stage.dragging { cursor: grabbing; }
+  .stage.shake { animation: shake .55s linear; }
+  @keyframes shake {
+    0%   { transform: translate(0, 0); }
+    10%  { transform: translate(-3px, 2px); }
+    20%  { transform: translate(4px, -3px); }
+    30%  { transform: translate(-5px, 3px); }
+    40%  { transform: translate(6px, 4px); }
+    50%  { transform: translate(-7px, -4px); }
+    60%  { transform: translate(7px, 3px); }
+    70%  { transform: translate(-8px, -3px); }
+    80%  { transform: translate(8px, 5px); }
+    90%  { transform: translate(-6px, -5px); }
+    100% { transform: translate(0, 0); }
+  }
+
+  .cube {
+    position: relative;
+    width: var(--size); height: var(--size);
+    transform-style: preserve-3d;
+    transition: transform 1.1s cubic-bezier(.65, .05, .25, 1);
+  }
+  .cube.no-anim { transition: none; }
+
+  /* Cada cara tiene dos capas: la piel verde (afuera) y el interior con el texto */
+  .face { position: absolute; inset: 0; transform-style: preserve-3d; }
+  .f-front  { transform: translateZ(calc(var(--size) / 2)); }
+  .f-right  { transform: rotateY(90deg)  translateZ(calc(var(--size) / 2)); }
+  .f-back   { transform: rotateY(180deg) translateZ(calc(var(--size) / 2)); }
+  .f-left   { transform: rotateY(-90deg) translateZ(calc(var(--size) / 2)); }
+  .f-top    { transform: rotateX(90deg)  translateZ(calc(var(--size) / 2)); }
+  .f-bottom { transform: rotateX(-90deg) translateZ(calc(var(--size) / 2)); }
+
+  .skin, .inside {
+    position: absolute; inset: 0;
+    backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  }
+
+  /* ---------- Exterior: verde sólido ---------- */
+  .skin {
+    background: #1fb255;
+    border: 3px solid #0f6b32;
+    display: flex; align-items: center; justify-content: center;
+    padding: calc(var(--size) * .08);
+    text-align: center;
+  }
+  .f-front  .skin { background: #22b95a; }
+  .f-right  .skin { background: #1da850; }
+  .f-back   .skin { background: #1b9c49; }
+  .f-left   .skin { background: #1ea34d; }
+  .f-top    .skin { background: #2cc765; }
+  .f-bottom .skin { background: #168a40; }
+  .skin h2 {
+    font-size: calc(var(--size) * .085); line-height: 1.12; color: #fff; font-weight: 700;
+    letter-spacing: .02em; text-shadow: 0 2px 0 rgba(0,0,0,.22);
+  }
+  .skin.blast {
+    animation: fly .95s cubic-bezier(.15, .7, .3, 1) forwards;
+  }
+  @keyframes fly {
+    0%   { transform: none; opacity: 1; }
+    55%  { opacity: 1; }
+    100% {
+      transform: translateZ(calc(var(--size) * var(--dist))) rotate3d(var(--ax), var(--ay), var(--az), var(--deg)) scale(var(--sc));
+      opacity: 0;
+    }
+  }
+  .skin.rebuild { animation: rebuild .7s ease-out both; }
+  @keyframes rebuild {
+    from { opacity: 0; transform: translateZ(calc(var(--size) * .5)) scale(.7); }
+    to   { opacity: 1; transform: none; }
+  }
+  .cube.exploded .skin { visibility: hidden; }
+
+  /* ---------- Interior: el texto ---------- */
+  .inside {
+    background: linear-gradient(160deg, rgba(16,28,52,1), rgba(8,14,28,1));
+    border: 1.5px solid var(--accent);
+    box-shadow: inset 0 0 40px rgba(62,224,255,.12);
+    padding: calc(var(--size) * .055);
+    display: flex; flex-direction: column; gap: calc(var(--size) * .022);
+    transform: rotateY(180deg);
+  }
+  .f-top .inside, .f-bottom .inside { transform: rotateX(180deg); }
+  .inside::before, .inside::after {
+    content: ""; position: absolute; width: 16px; height: 16px; border: 2px solid var(--accent2);
+  }
+  .inside::before { top: 6px; left: 6px; border-right: none; border-bottom: none; }
+  .inside::after { bottom: 6px; right: 6px; border-left: none; border-top: none; }
+
+  .tag { font-size: calc(var(--size) * .027); letter-spacing: .2em; color: var(--accent2); text-transform: uppercase; }
+  .inside h2 { font-size: calc(var(--size) * .057); color: #fff; font-weight: 600; line-height: 1.15; }
+
+  .imgbox {
+    flex: 1; min-height: 0; border: 1px solid var(--line); background: #060b16;
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+  }
+  .imgbox img { width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none; }
+  .caption { font-size: calc(var(--size) * .03); line-height: 1.35; color: var(--muted); }
+  .caption strong { color: var(--accent2); font-weight: 600; }
+
+  .wrap { position: relative; flex: 1; min-height: 0; }
+  .body { position: absolute; inset: 0; overflow: hidden; line-height: 1.4; color: #eef4ff; padding-right: 10px;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  .more {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 16%; pointer-events: none;
+    background: linear-gradient(transparent, rgba(8,14,28,.97) 75%);
+    display: flex; align-items: flex-end; justify-content: center; padding-bottom: 2px;
+    color: var(--accent2); font-size: calc(var(--size) * .03); opacity: 0; transition: opacity .25s;
+  }
+  .wrap.more-on .more { opacity: 1; }
+  .prog { position: absolute; top: 0; bottom: 0; right: 0; width: 3px; border-radius: 2px;
+    background: rgba(62,224,255,.16); opacity: 0; pointer-events: none; }
+  .prog i { position: absolute; left: 0; right: 0; border-radius: 2px; background: var(--accent); }
+  .wrap.scrollable .prog { opacity: 1; }
+  .body p { margin-bottom: .45em; }
+  .body h3 { font-size: 1em; color: var(--accent); text-transform: uppercase; letter-spacing: .12em; margin: .5em 0 .15em; }
+  .body h3:first-child { margin-top: 0; }
+  .body ul { padding-left: 1.2em; margin-bottom: .35em; }
+  .body li { margin-bottom: .22em; }
+  .body li::marker { color: var(--accent2); }
+  .body strong { color: var(--accent); font-weight: 600; }
+  .key {
+    border-left: 3px solid var(--accent2); background: rgba(124,255,178,.08);
+    padding: .45em .7em; margin-top: .4em;
+  }
+  .key strong { color: var(--accent2); }
+
+  /* ---------- Controles ---------- */
+  footer {
+    z-index: 2; padding: 6px 16px 18px;
+    display: flex; flex-direction: column; align-items: center; gap: 11px; min-height: 108px; justify-content: flex-end;
+  }
+  .pre, .post { display: flex; flex-direction: column; align-items: center; gap: 11px; }
+  .post { display: none; }
+  body.open .post { display: flex; }
+  body.open .pre { display: none; }
+  .controls { display: flex; gap: 10px; align-items: center; }
+  button {
+    background: transparent; color: var(--accent); border: 1.5px solid var(--accent);
+    padding: 11px 22px; font-size: 14px; letter-spacing: .12em; text-transform: uppercase;
+    cursor: pointer; transition: background .2s, color .2s, transform .1s; font-family: inherit;
+  }
+  button:hover, button:focus-visible { background: var(--accent); color: var(--bg); outline: none; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.ghost { border-color: var(--line); color: var(--muted); padding: 11px 14px; }
+  button.boom {
+    font-size: clamp(18px, 4.6vw, 24px); font-weight: 800; letter-spacing: .16em;
+    padding: 14px 38px; color: #fff; background: #e8431f; border: 2px solid #ffb86b;
+    box-shadow: 0 0 22px rgba(255,120,50,.55);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  button.boom:hover:not(:disabled), button.boom:focus-visible { background: #ff5a2e; color: #fff; }
+  button.boom:active { transform: scale(.96); }
+  button.boom:disabled { animation: none; }
+  @keyframes pulse { 50% { box-shadow: 0 0 34px rgba(255,140,60,.95); } }
+  .dots { display: flex; gap: 9px; }
+  .dot { width: 12px; height: 12px; border: 1.5px solid var(--accent); border-radius: 50%; background: transparent; cursor: pointer; padding: 0; }
+  .dot:hover { background: rgba(62,224,255,.4); }
+  .dot.active { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .hint { font-size: 11px; color: var(--muted); letter-spacing: .07em; text-align: center; }
+
+  /* ---------- Efectos ---------- */
+  #fx { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+  .flash {
+    position: fixed; inset: 0; pointer-events: none; z-index: 6; opacity: 0;
+    background: radial-gradient(circle at 50% 45%, #fff 0%, #ffd9a0 35%, rgba(255,140,60,0) 75%);
+  }
+  .flash.go { animation: flash .8s ease-out; }
+  @keyframes flash { 0% { opacity: 0; } 12% { opacity: 1; } 100% { opacity: 0; } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Cubo científico</h1>
+  <p id="status"></p>
+</header>
+
+<div class="stage" id="stage">
+  <div class="cube" id="cube"></div>
+</div>
+
+<footer>
+  <div class="pre">
+    <button class="boom" id="boom">¡EXPLOTAR!</button>
+    <div class="hint">Arrastrá para girar el cubo</div>
+  </div>
+  <div class="post">
+    <div class="controls">
+      <button class="ghost" id="prev" aria-label="Cara anterior">◀</button>
+      <button id="next">Siguiente ▶</button>
+      <button class="ghost" id="rearm" title="Volver a armar el cubo">Rearmar</button>
+    </div>
+    <div class="dots" id="dots"></div>
+    <div class="hint">Deslizá hacia los costados para cambiar de cara · Si el texto continúa, deslizalo hacia arriba</div>
+  </div>
+</footer>
+
+<canvas id="fx"></canvas>
+<div class="flash" id="flash"></div>
+
+<script>
+/* ================================================================
+   CONTENIDO  ← acá se edita todo
+   ================================================================ */
+const FACES = [
+  {
+    pos: "front",
+    label: "Centro · Imagen de Corrientes",
+    tag: "Centro del cubo",
+    title: "Degradación de los ecosistemas",
+    outsideTitle: true,
+    image: "corrientes.jpg",
+    imageAlt: "Cuatro fotografías de un mismo tipo de ambiente en Corrientes: terreno quemado y vegetación recuperada, vistos a nivel del suelo y desde el aire",
+    caption: "<strong>Fotografías tomadas en Corrientes.</strong> A la izquierda, terreno afectado por un incendio; a la derecha, ambiente con vegetación recuperada."
+  },
+  {
+    pos: "right",
+    label: "Cara 1 de 5",
+    tag: "Cara 1",
+    title: "¿Qué es y por qué ocurre?",
+    html: `
+      <p>La degradación de los ecosistemas es el deterioro de un ambiente natural que reduce su biodiversidad y altera su funcionamiento.</p>
+      <p>Implica perder especies, procesos como el ciclado de nutrientes y la regulación del agua, y la resiliencia, es decir, la capacidad de recuperarse de las perturbaciones. Hoy cerca de tres cuartas partes del ambiente terrestre fueron alteradas por la actividad humana y alrededor de un millón de especies están en riesgo de extinción.</p>
+      <h3>Principales causas</h3>
+      <ul>
+        <li><strong>Deforestación</strong> para agricultura y ganadería: la expansión agrícola explica cerca del 90 % de la deforestación mundial.</li>
+        <li><strong>Incendios</strong> provocados o mal controlados: eliminan la cobertura vegetal y la materia orgánica del suelo.</li>
+        <li><strong>Contaminación</strong> del agua, el aire y el suelo: el exceso de nutrientes provoca eutrofización y los agroquímicos dañan al suelo y a los organismos.</li>
+        <li><strong>Urbanización y explotación excesiva</strong> de recursos: sellado del suelo, fragmentación del hábitat, pesca, caza y tala.</li>
+        <li><strong>Cambio climático:</strong> favorece sequías, olas de calor y condiciones propicias para los incendios.</li>
+      </ul>
+      <p>Estas causas se combinan: por ejemplo, el desmonte facilita el fuego y los incendios dejan el suelo expuesto a la erosión.</p>`
+  },
+  {
+    pos: "back",
+    label: "Cara 2 de 5",
+    tag: "Cara 2",
+    title: "¿Cómo afecta a los sistemas naturales?",
+    html: `
+      <ul>
+        <li><strong>Flora:</strong> desaparecen plantas y árboles nativos, se simplifica la vegetación y las especies exóticas invasoras desplazan a las nativas.</li>
+        <li><strong>Fauna:</strong> los animales pierden alimento y refugio. La fragmentación aísla las poblaciones, reduce su variabilidad genética y altera la polinización y la dispersión de semillas.</li>
+        <li><strong>Suelo:</strong> pierde nutrientes y aumenta la erosión. Cerca del 33 % de los suelos del mundo está moderada o altamente degradado.</li>
+        <li><strong>Agua:</strong> cambia su calidad y disponibilidad. Llegan más sedimentos y nutrientes a los cuerpos de agua, y los humedales perdieron cerca del 35 % de su extensión mundial entre 1970 y 2015.</li>
+        <li><strong>Clima:</strong> disminuye la captura de dióxido de carbono. Un ecosistema degradado puede pasar de sumidero a fuente de emisiones.</li>
+      </ul>
+      <p>Estos cambios se refuerzan entre sí: sin vegetación hay menos protección del suelo, y la desaparición de especies clave puede afectar a toda la red trófica, lo que dificulta la recuperación.</p>`
+  },
+  {
+    pos: "left",
+    label: "Cara 3 de 5",
+    tag: "Cara 3",
+    title: "Consecuencias y caso real argentino",
+    html: `
+      <p><strong>Caso: incendios en los humedales del Paraná.</strong> El 16 de septiembre de 2026, LA NACION informó sobre nuevos focos de incendio en las islas frente a Rosario, en territorio entrerriano. Se vieron columnas de humo y varios puntos de calor confirmados por imágenes satelitales de la NASA.</p>
+      <p>Entre las causas señaladas estaban la vegetación seca, la falta de lluvias, la baja humedad y las quemas de pastizales para renovar pasturas. El humo se vio desde Rosario, San Lorenzo y Fray Luis Beltrán y redujo la visibilidad en la ruta 174. No hubo personas ni viviendas afectadas; se dio aviso a las autoridades y se elevó un informe a la Fiscalía Federal.</p>
+      <h3>Posibles consecuencias</h3>
+      <ul>
+        <li><strong>Muerte de animales</strong> y destrucción de vegetación, sobre todo de fauna de baja movilidad, nidos y crías.</li>
+        <li><strong>Pérdida de hábitats y biodiversidad,</strong> con ventaja para las especies oportunistas e invasoras.</li>
+        <li><strong>Contaminación del aire</strong> por el humo, que afecta el sistema respiratorio.</li>
+        <li><strong>Daños al suelo y al humedal:</strong> menos regulación de crecidas, filtrado del agua y almacenamiento de carbono.</li>
+      </ul>`
+  },
+  {
+    pos: "top",
+    label: "Cara 4 de 5",
+    tag: "Cara 4",
+    title: "¿Qué podemos hacer?",
+    html: `
+      <h3>Prevenir</h3>
+      <ul>
+        <li>Evitar quemas ilegales y denunciar focos de incendio. Las quemas controladas requieren autorización y planificación técnica.</li>
+        <li>Proteger bosques, humedales y áreas naturales con ordenamiento territorial, áreas protegidas y una ley de humedales con sanciones claras.</li>
+        <li>Reducir la contaminación y el consumo innecesario, y usar los fertilizantes con más eficiencia.</li>
+      </ul>
+      <h3>Reducir el daño</h3>
+      <ul>
+        <li>Controlar las actividades productivas: reducir la labranza, rotar cultivos y ajustar la carga animal sin recurrir a quemas.</li>
+        <li>Mejorar la gestión de residuos y el uso del agua.</li>
+        <li>Aplicar las leyes ambientales con fiscalización y sanciones.</li>
+      </ul>
+      <h3>Restaurar</h3>
+      <ul>
+        <li>Recuperar ambientes degradados con especies nativas, ya sea dejando que se regeneren solos o con siembra y plantación.</li>
+        <li>Proteger la fauna y sus hábitats con corredores biológicos.</li>
+        <li>Monitorear los ecosistemas midiendo cobertura vegetal, especies y calidad del agua.</li>
+      </ul>
+      <p>La ONU declaró 2021-2030 como la Década para la Restauración de los Ecosistemas.</p>`
+  },
+  {
+    pos: "bottom",
+    label: "Cara 5 de 5",
+    tag: "Cara 5",
+    title: "¿Por qué es importante conservarlos?",
+    html: `
+      <p>Los ecosistemas sanos nos brindan servicios esenciales:</p>
+      <ul>
+        <li><strong>Producen oxígeno y capturan carbono:</strong> la vegetación y el fitoplancton producen oxígeno y fijan CO₂.</li>
+        <li><strong>Regulan el ciclo del agua:</strong> los humedales almacenan agua, amortiguan las crecidas y retienen contaminantes.</li>
+        <li><strong>Mantienen la fertilidad del suelo:</strong> reciclan nutrientes y sostienen su estructura.</li>
+        <li><strong>Dan alimento y refugio</strong> a numerosas especies y sostienen procesos como la polinización, de la que dependen muchos cultivos.</li>
+        <li><strong>Contribuyen a la salud humana:</strong> mejoran la calidad del aire y del agua y protegen de inundaciones y huracanes.</li>
+      </ul>
+      <div class="key"><strong>Conclusión:</strong> proteger la naturaleza también significa proteger nuestra propia calidad de vida.</div>`
+  },
+];
+
+/* Ángulos (rotateX, rotateY) para ver cada cara desde ADENTRO
+   (la cara elegida queda al fondo del cubo abierto, siempre derecha) */
+const INSIDE = {
+  front:  [0, 180],
+  right:  [0, 90],
+  back:   [0, 0],
+  left:   [0, -90],
+  top:    [90, 0],
+  bottom: [-90, 0],
+};
+
+const cube = document.getElementById("cube");
+const stage = document.getElementById("stage");
+const statusEl = document.getElementById("status");
+const dotsEl = document.getElementById("dots");
+const boomBtn = document.getElementById("boom");
+const bodies = [];
+const skins = [];
+const START_TEXT = "Tocá ¡EXPLOTAR! para abrir el cubo";
+
+/* ---------- Construcción del cubo ---------- */
+FACES.forEach((f, i) => {
+  const el = document.createElement("div");
+  el.className = "face f-" + f.pos;
+
+  /* Exterior: verde sólido; solo la cara frontal lleva el título */
+  const skin = document.createElement("div");
+  skin.className = "skin";
+  if (f.outsideTitle) {
+    const t = document.createElement("h2");
+    t.textContent = f.title;
+    skin.appendChild(t);
+  }
+  skins.push(skin);
+
+  /* Interior: el contenido */
+  const inside = document.createElement("div");
+  inside.className = "inside";
+  const tag = document.createElement("div");
+  tag.className = "tag"; tag.textContent = f.tag;
+  const h = document.createElement("h2");
+  h.textContent = f.title;
+  inside.append(tag, h);
+
+  if (f.image) {
+    const box = document.createElement("div");
+    box.className = "imgbox";
+    const img = document.createElement("img");
+    img.src = f.image; img.alt = f.imageAlt || f.title; img.draggable = false;
+    img.onerror = () => { box.innerHTML = '<div class="caption">[ no se encontró ' + f.image + ' ]</div>'; };
+    box.appendChild(img);
+    const cap = document.createElement("div");
+    cap.className = "caption"; cap.innerHTML = f.caption;
+    inside.append(box, cap);
+  }
+  if (f.html) {
+    const wrap = document.createElement("div");
+    wrap.className = "wrap";
+    const b = document.createElement("div");
+    b.className = "body"; b.innerHTML = f.html;
+    const more = document.createElement("div");
+    more.className = "more"; more.textContent = "▼";
+    const prog = document.createElement("div");
+    prog.className = "prog"; prog.innerHTML = "<i></i>";
+    wrap.append(b, more, prog);
+    inside.appendChild(wrap);
+    b.addEventListener("scroll", () => updateMore(b));
+    bodies.push(b);
+  }
+  el.append(skin, inside);
+  cube.appendChild(el);
+
+  const d = document.createElement("button");
+  d.className = "dot"; d.setAttribute("aria-label", "Ir a: " + f.label);
+  d.title = f.label;
+  d.onclick = () => goTo(i);
+  dotsEl.appendChild(d);
+});
+
+/* ---------- Ajuste automático del tamaño de letra ---------- */
+function updateMore(b) {
+  const wrap = b.parentElement;
+  const scrollable = b.scrollHeight > b.clientHeight + 1;
+  const atEnd = b.scrollTop + b.clientHeight >= b.scrollHeight - 2;
+  wrap.classList.toggle("scrollable", scrollable);
+  b.classList.toggle("scrollable", scrollable);
+  wrap.classList.toggle("more-on", scrollable && !atEnd);
+  const thumb = wrap.querySelector(".prog i");
+  if (scrollable) {
+    thumb.style.height = (100 * b.clientHeight / b.scrollHeight) + "%";
+    thumb.style.top = (100 * b.scrollTop / b.scrollHeight) + "%";
+  }
+}
+function fitText() {
+  const size = cube.offsetWidth;
+  const floor = Math.max(17, size * 0.047);
+  bodies.forEach(b => {
+    let fs = size * 0.06;
+    b.style.fontSize = fs + "px";
+    while (b.scrollHeight > b.clientHeight + 1 && fs > floor) {
+      fs = Math.max(floor, fs - 0.5);
+      b.style.fontSize = fs + "px";
+    }
+    updateMore(b);
+  });
+}
+
+/* ---------- Rotación ---------- */
+let rx = -18, ry = -28;
+let index = 0;
+let exploded = false, busy = false;
+
+/* Con el cubo abierto se adelanta media arista: la cara del fondo queda justo en el plano
+   de la pantalla (escala 1), y así el texto se ve nítido y no reescalado por la perspectiva. */
+function apply() {
+  const tz = exploded ? cube.offsetWidth / 2 : 0;
+  cube.style.transform = `translateZ(${tz}px) rotateX(${rx}deg) rotateY(${ry}deg)`;
+}
+function updateUI() {
+  statusEl.textContent = exploded ? FACES[index].label : START_TEXT;
+  [...dotsEl.children].forEach((d, i) => d.classList.toggle("active", i === index));
+}
+const near = (cur, target) => target + 360 * Math.round((cur - target) / 360);
+
+function goTo(i) {
+  if (!exploded) return;
+  index = (i + FACES.length) % FACES.length;
+  const [tx, ty] = INSIDE[FACES[index].pos];
+  rx = near(rx, tx);
+  ry = near(ry, ty);
+  cube.classList.remove("no-anim");
+  const bd = cube.children[index].querySelector(".body");
+  if (bd) { bd.scrollTop = 0; updateMore(bd); }
+  apply();
+  updateUI();
+}
+
+document.getElementById("next").onclick = () => goTo(index + 1);
+document.getElementById("prev").onclick = () => goTo(index - 1);
+document.getElementById("rearm").onclick = rearm;
+boomBtn.onclick = explode;
+window.addEventListener("keydown", e => {
+  if (!exploded) return;
+  if (e.key === "ArrowRight") { e.preventDefault(); goTo(index + 1); }
+  if (e.key === "ArrowLeft") goTo(index - 1);
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    const bd = currentBody();
+    if (bd) { e.preventDefault(); bd.scrollBy({ top: e.key === "ArrowDown" ? 90 : -90, behavior: "smooth" }); }
+  }
+});
+
+/* ================================================================
+   SONIDO (sintetizado con Web Audio, no necesita archivos)
+   ================================================================ */
+let actx = null;
+function audio() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  if (!actx) actx = new AC();
+  if (actx.state === "suspended") actx.resume();
+  return actx;
+}
+function noiseBuffer(a, secs, power) {
+  const len = Math.floor(a.sampleRate * secs);
+  const buf = a.createBuffer(1, len, a.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, power);
+  return buf;
+}
+function rumble() {            // temblor grave antes de la explosión
+  try {
+    const a = audio(); if (!a) return;
+    const t = a.currentTime;
+    const o = a.createOscillator(), g = a.createGain(), lfo = a.createOscillator(), lg = a.createGain();
+    o.type = "sawtooth"; o.frequency.value = 48;
+    lfo.frequency.value = 22; lg.gain.value = 0.25;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.45, t + 0.5);
+    g.gain.linearRampToValueAtTime(0.0001, t + 0.6);
+    lfo.connect(lg).connect(g.gain);
+    o.connect(g).connect(a.destination);
+    o.start(t); lfo.start(t); o.stop(t + 0.65); lfo.stop(t + 0.65);
+  } catch (e) {}
+}
+function boom() {
+  try {
+    const a = audio(); if (!a) return;
+    const t = a.currentTime;
+    const master = a.createGain(); master.gain.value = 0.9; master.connect(a.destination);
+
+    /* estruendo: ruido que se apaga y se va haciendo grave */
+    const n = a.createBufferSource(); n.buffer = noiseBuffer(a, 2.4, 2.2);
+    const lp = a.createBiquadFilter(); lp.type = "lowpass";
+    lp.frequency.setValueAtTime(5500, t);
+    lp.frequency.exponentialRampToValueAtTime(110, t + 2);
+    const ng = a.createGain();
+    ng.gain.setValueAtTime(1, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 2.3);
+    n.connect(lp).connect(ng).connect(master); n.start(t);
+
+    /* golpe grave */
+    const o = a.createOscillator(), og = a.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(150, t);
+    o.frequency.exponentialRampToValueAtTime(32, t + 0.7);
+    og.gain.setValueAtTime(1.1, t);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 1);
+    o.connect(og).connect(master); o.start(t); o.stop(t + 1.05);
+
+    /* chasquido agudo del primer instante */
+    const c = a.createBufferSource(); c.buffer = noiseBuffer(a, 0.18, 4);
+    const hp = a.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 1800;
+    const cg = a.createGain(); cg.gain.value = 0.7;
+    c.connect(hp).connect(cg).connect(master); c.start(t);
+  } catch (e) {}
+}
+
+/* ================================================================
+   EFECTOS VISUALES
+   ================================================================ */
+function burst() {
+  const c = document.getElementById("fx"), g = c.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  c.width = innerWidth * dpr; c.height = innerHeight * dpr;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const r = stage.getBoundingClientRect();
+  const ox = r.left + r.width / 2, oy = r.top + r.height / 2, unit = cube.offsetWidth / 450;
+  const cols = ["#7cffb2", "#22b455", "#3ee0ff", "#ffd166", "#ff9f43", "#ffffff"];
+  const ps = [];
+  for (let i = 0; i < 170; i++) {
+    const a = Math.random() * Math.PI * 2, sp = (2 + Math.random() * 9) * unit;
+    ps.push({
+      x: ox, y: oy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1.5 * unit,
+      s: (3 + Math.random() * 9) * Math.max(.7, unit), rot: Math.random() * 6, vr: (Math.random() - .5) * .4,
+      life: 1, decay: .008 + Math.random() * .014,
+      c: cols[Math.floor(Math.random() * cols.length)], spark: Math.random() < .35
+    });
+  }
+  (function step() {
+    g.clearRect(0, 0, innerWidth, innerHeight);
+    let alive = false;
+    for (const p of ps) {
+      if (p.life <= 0) continue;
+      alive = true;
+      p.x += p.vx; p.y += p.vy; p.vy += .18; p.vx *= .985; p.rot += p.vr; p.life -= p.decay;
+      g.globalAlpha = Math.max(0, p.life); g.fillStyle = p.c;
+      g.save(); g.translate(p.x, p.y); g.rotate(p.rot);
+      if (p.spark) g.fillRect(-p.s * 1.5, -1, p.s * 3, 2); else g.fillRect(-p.s / 2, -p.s / 2, p.s, p.s);
+      g.restore();
+    }
+    if (alive) requestAnimationFrame(step); else g.clearRect(0, 0, innerWidth, innerHeight);
+  })();
+}
+function flash() {
+  const f = document.getElementById("flash");
+  f.classList.remove("go"); void f.offsetWidth; f.classList.add("go");
+}
+
+/* ================================================================
+   EXPLOTAR / REARMAR
+   ================================================================ */
+function explode() {
+  if (exploded || busy) return;
+  busy = true; boomBtn.disabled = true;
+  rumble();
+  stage.classList.add("shake");
+  setTimeout(() => {
+    stage.classList.remove("shake");
+    boom(); flash(); burst();
+    skins.forEach(s => {
+      const rnd = (a, b) => a + Math.random() * (b - a);
+      s.style.setProperty("--dist", rnd(1.3, 2.2).toFixed(2));
+      s.style.setProperty("--ax", rnd(-1, 1).toFixed(2));
+      s.style.setProperty("--ay", rnd(-1, 1).toFixed(2));
+      s.style.setProperty("--az", rnd(-1, 1).toFixed(2));
+      s.style.setProperty("--deg", rnd(-220, 220).toFixed(0) + "deg");
+      s.style.setProperty("--sc", rnd(.6, 1.1).toFixed(2));
+      s.classList.add("blast");
+    });
+  }, 560);
+  setTimeout(() => {
+    exploded = true;
+    cube.classList.add("exploded");
+    document.body.classList.add("open");
+    busy = false;
+    goTo(0);
+  }, 1050);
+}
+
+function rearm() {
+  if (!exploded || busy) return;
+  exploded = false;
+  cube.classList.remove("exploded");
+  document.body.classList.remove("open");
+  skins.forEach(s => { s.classList.remove("blast"); s.classList.add("rebuild"); });
+  setTimeout(() => skins.forEach(s => s.classList.remove("rebuild")), 800);
+  rx = near(rx, -18); ry = near(ry, -28);
+  cube.classList.remove("no-anim");
+  apply();
+  boomBtn.disabled = false;
+  index = 0;
+  updateUI();
+}
+
+/* ================================================================
+   Arrastrar con mouse o dedo
+   - Cubo cerrado: gira libremente
+   - Cubo abierto: horizontal = cambiar de cara, vertical sobre el texto = leer
+   ================================================================ */
+const currentBody = () => cube.children[index].querySelector(".body");
+const scaleOf = bd => bd.getBoundingClientRect().height / bd.offsetHeight || 1;
+let mode = null, dragging = false, startX = 0, startY = 0, lastX = 0, lastY = 0, textBody = null, vy = 0, lastT = 0, raf = 0, totalDx = 0;
+
+stage.addEventListener("pointerdown", e => {
+  cancelAnimationFrame(raf);
+  dragging = true; lastX = startX = e.clientX; lastY = startY = e.clientY; totalDx = 0;
+  if (!exploded) {
+    mode = "rotate"; textBody = null;
+    stage.classList.add("dragging"); cube.classList.add("no-anim");
+  } else {
+    textBody = e.target.closest(".body.scrollable");
+    mode = "pending";
+  }
+  stage.setPointerCapture(e.pointerId);
+});
+stage.addEventListener("pointermove", e => {
+  if (!dragging) return;
+  if (mode === "pending") {
+    const dx = e.clientX - startX, dy = e.clientY - startY;
+    if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+    if (textBody && Math.abs(dy) >= Math.abs(dx)) { mode = "text"; vy = 0; }
+    else { mode = "swipe"; stage.classList.add("dragging"); }
+    lastX = e.clientX; lastY = e.clientY; lastT = performance.now();
+    return;
+  }
+  if (mode === "text") {
+    const now = performance.now(), dy = e.clientY - lastY, k = scaleOf(textBody);
+    textBody.scrollTop -= dy / k;
+    vy = 0.8 * vy + 0.2 * (dy / k) / Math.max(1, now - lastT);
+    lastY = e.clientY; lastT = now;
+    return;
+  }
+  if (mode === "swipe") { totalDx = e.clientX - startX; return; }
+  ry += (e.clientX - lastX) * 0.4;
+  rx -= (e.clientY - lastY) * 0.4;
+  lastX = e.clientX; lastY = e.clientY;
+  apply();
+});
+const stop = () => {
+  if (mode === "text" && textBody) {
+    const bd = textBody;
+    const glide = () => {
+      if (Math.abs(vy) < 0.02) return;
+      bd.scrollTop -= vy * 16; vy *= 0.94;
+      raf = requestAnimationFrame(glide);
+    };
+    if (performance.now() - lastT < 80) glide();
+  }
+  if (mode === "swipe" && Math.abs(totalDx) > 60) goTo(index + (totalDx < 0 ? 1 : -1));
+  dragging = false; mode = null; stage.classList.remove("dragging");
+};
+stage.addEventListener("pointerup", stop);
+stage.addEventListener("pointercancel", stop);
+
+stage.addEventListener("wheel", e => {
+  if (!exploded) return;
+  const bd = currentBody();
+  if (!bd || !bd.classList.contains("scrollable")) return;
+  e.preventDefault();
+  const k = e.deltaMode === 1 ? 32 : e.deltaMode === 2 ? bd.clientHeight : 1;
+  bd.scrollTop += e.deltaY * k;
+}, { passive: false });
+
+window.addEventListener("resize", () => { fitText(); apply(); });
+window.addEventListener("load", fitText);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitText);
+
+apply();
+updateUI();
+fitText();
+</script>
+</body>
+</html>
